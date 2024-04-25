@@ -1,0 +1,76 @@
+library(readxl)
+library(ggmap)
+library(dplyr)
+library(purrr)
+
+# Set your Google API key
+api_key <- "your_google_maps_api_key_here"  # Replace with your actual API key
+register_google(key = api_key)
+
+# Load the data
+photos <- read_excel("~/Desktop/photos.xlsx")
+
+# Define an updated geocoding function
+get_location_details <- function(lat, lon) {
+  tryCatch({
+    result <- revgeocode(c(lon, lat), output = "all")
+    if (is.null(result) || !is.list(result)) {
+      print(paste("No result or unexpected result type for the coordinates:", lat, ",", lon))
+      print(result)  # Output the actual result for debugging
+      return(c(State = NA, Country = NA))
+    }
+    
+    if (is.null(result$results) || length(result$results) == 0) {
+      print(paste("No results found for the coordinates:", lat, ",", lon))
+      return(c(State = NA, Country = NA))
+    }
+    
+    address_components <- result$results[[1]]$address_components
+    state <- NA
+    country <- NA
+    if (!is.null(address_components)) {
+      for (component in address_components) {
+        if ("administrative_area_level_1" %in% component$types) {
+          state <- component$long_name
+        }
+        if ("country" %in% component$types) {
+          country <- component$long_name
+        }
+      }
+    } else {
+      print(paste("Address components missing for the coordinates:", lat, ",", lon))
+    }
+    return(c(State = state, Country = country))
+  }, error = function(e) {
+    message("Error in geocoding: ", e$message)
+    return(c(State = NA, Country = NA))
+  })
+}
+
+# Apply the function to each row
+location_details <- map2_df(photos$Latitude, photos$Longitude, get_location_details)
+
+# Combine the results with the original data
+photos <- bind_cols(photos, location_details)
+
+# Check the output
+print(head(photos))
+
+# Your existing code to process the data
+# Assuming 'photos' is your final data frame that you want to save
+
+# Install and load the openxlsx package if not already installed
+if (!require(openxlsx)) {
+  install.packages("openxlsx")
+  library(openxlsx)
+}
+
+# Specify the file path where you want to save the Excel file
+file_path <- "~/Desktop/updated_photos.xlsx"  # Change the path and filename as needed
+
+# Write the data frame to an Excel file
+write.xlsx(photos, file = file_path)
+
+# Print a message to confirm the file has been saved
+print(paste("Data saved to", file_path))
+
